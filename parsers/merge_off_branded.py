@@ -28,7 +28,8 @@ SOURCE_NAME = "branded-foods"
 USDA_BRANDED_SOURCE = "usda_fooddata_central_branded"
 OFF_SOURCE = "open_food_facts"
 EXTRA_FIELD = "upc"
-BRANDED_FIELDS = [*CORE_FOOD_FIELDS, EXTRA_FIELD]
+BRAND_FIELD = "brand"
+BRANDED_FIELDS = [*CORE_FOOD_FIELDS, EXTRA_FIELD, BRAND_FIELD]
 RAW_OUTPUT_PREFIX = "raw-foods"
 
 ROOT_KEY_BRANDED_FOODS = "BrandedFoods"
@@ -347,6 +348,7 @@ def upc_match_keys(upc: str | None) -> set[str]:
 def build_empty_row(core_fields: list[str]) -> dict[str, Any]:
     row = {field: None for field in core_fields}
     row[EXTRA_FIELD] = None
+    row[BRAND_FIELD] = None
     return row
 
 
@@ -414,6 +416,74 @@ def build_off_portions(food_row: dict[str, Any]) -> list[dict[str, Any]] | None:
 
     amount, unit = parsed
     return [{"name": serving_size or "serving", "amount": amount, "unit": unit}]
+
+
+def first_delimited_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    for segment in re.split(r"[,;|]", value):
+        candidate = normalize_text(segment)
+        if candidate is not None:
+            return candidate
+    return None
+
+
+def normalize_brand_tag(value: Any) -> str | None:
+    text = normalize_text(value)
+    if text is None:
+        return None
+
+    candidate = text
+    if ":" in candidate:
+        prefix, suffix = candidate.split(":", 1)
+        if prefix.isalpha() and 1 <= len(prefix) <= 5 and suffix.strip():
+            candidate = suffix
+
+    return normalize_text(candidate)
+
+
+def extract_usda_brand(food_row: dict[str, Any]) -> str | None:
+    for key in ("brandName", "subbrandName", "brandOwner"):
+        brand = normalize_text(food_row.get(key))
+        if brand is not None:
+            return brand
+    return None
+
+
+def extract_off_brand(food_row: dict[str, Any]) -> str | None:
+    for key in ("brands", "brand", "brand_owner", "brands_imported"):
+        value = food_row.get(key)
+        if isinstance(value, list):
+            for entry in value:
+                if isinstance(entry, dict):
+                    brand = first_delimited_text(
+                        normalize_text(entry.get("text")) or normalize_text(entry.get("name"))
+                    )
+                else:
+                    brand = first_delimited_text(normalize_text(entry))
+                if brand is not None:
+                    return brand
+            continue
+
+        brand = first_delimited_text(normalize_text(value))
+        if brand is not None:
+            return brand
+
+    brand_tags = food_row.get("brands_tags")
+    if isinstance(brand_tags, list):
+        for tag in brand_tags:
+            brand = normalize_brand_tag(tag)
+            if brand is not None:
+                return brand
+    else:
+        tag_text = normalize_text(brand_tags)
+        if tag_text is not None:
+            for tag in re.split(r"[,;|]", tag_text):
+                brand = normalize_brand_tag(tag)
+                if brand is not None:
+                    return brand
+
+    return None
 
 
 def extract_product_name(product_name: Any, language: Any) -> str | None:
@@ -530,6 +600,7 @@ def map_off_row(
     source_id = normalize_text(food_row.get("code"))
     normalized["source_id"] = source_id
     normalized[EXTRA_FIELD] = normalize_upc(source_id)
+    normalized[BRAND_FIELD] = extract_off_brand(food_row)
     normalized["name"] = extract_product_name(food_row.get("product_name"), food_row.get("lang"))
     normalized["portions"] = build_off_portions(food_row)
 
@@ -672,6 +743,7 @@ def map_usda_branded_row(
     for field in core_fields:
         enriched[field] = normalized.get(field)
     enriched[EXTRA_FIELD] = normalize_upc(food_row.get("gtinUpc"))
+    enriched[BRAND_FIELD] = extract_usda_brand(food_row)
     return enriched
 
 
@@ -712,7 +784,19 @@ def iter_off_rows(
 
     columns = [
         column
-        for column in ("code", "lang", "product_name", "nutriments", "serving_size", "serving_quantity")
+        for column in (
+            "code",
+            "lang",
+            "product_name",
+            "nutriments",
+            "serving_size",
+            "serving_quantity",
+            "brands",
+            "brands_tags",
+            "brand",
+            "brand_owner",
+            "brands_imported",
+        )
         if column in schema_names
     ]
 

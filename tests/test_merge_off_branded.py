@@ -63,11 +63,24 @@ class MergeOffBrandedTests(unittest.TestCase):
         )
         self.assertAlmostEqual(converted, 2.5, places=6)
 
+    def test_extract_usda_brand_prefers_brand_name(self):
+        food_row = {
+            "brandOwner": "Owner Corp",
+            "subbrandName": "Subbrand",
+            "brandName": "Primary Brand",
+        }
+        self.assertEqual(merge_off_branded.extract_usda_brand(food_row), "Primary Brand")
+
+    def test_extract_off_brand_from_tags(self):
+        food_row = {"brands_tags": ["en:sample-brand"]}
+        self.assertEqual(merge_off_branded.extract_off_brand(food_row), "sample-brand")
+
     def test_map_off_row_converts_units_and_computes_net_carbs(self):
         off_row = {
             "code": "0012345678905",
             "lang": "en",
             "product_name": [{"lang": "en", "text": "Sample Product"}],
+            "brands": "Sample Brand, Parent Brand",
             "serving_size": "2 Tbsp (30 g)",
             "serving_quantity": "2",
             "nutriments": [
@@ -93,9 +106,10 @@ class MergeOffBrandedTests(unittest.TestCase):
         )
 
         mapped = merge_off_branded.map_off_row(off_row, target_units, CORE_FOOD_FIELDS)
-        self.assertEqual(set(mapped.keys()), set(CORE_FOOD_FIELDS + ["upc"]))
+        self.assertEqual(set(mapped.keys()), set(CORE_FOOD_FIELDS + ["upc", "brand"]))
         self.assertEqual(mapped["source"], "open_food_facts")
         self.assertEqual(mapped["name"], "Sample Product")
+        self.assertEqual(mapped["brand"], "Sample Brand")
         self.assertAlmostEqual(mapped["sodium"], 400.0, places=5)
         self.assertAlmostEqual(mapped["net_carbohydrates"], 15.0, places=5)
         self.assertIsInstance(mapped["portions"], list)

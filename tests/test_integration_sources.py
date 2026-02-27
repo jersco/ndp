@@ -208,7 +208,7 @@ class SourceIntegrationTests(unittest.TestCase):
         )
 
         self.assertIsNotNone(row)
-        self.assertEqual(set(CORE_FOOD_FIELDS + ["upc"]), set(row.keys()))
+        self.assertEqual(set(CORE_FOOD_FIELDS + ["upc", "brand"]), set(row.keys()))
         self.assertIn(row.get("source"), {"usda_fooddata_central_branded", "open_food_facts"})
 
     def test_normalize_raw_parser_first_row(self):

@@ -101,9 +101,10 @@ Raw and branded outputs are intentionally separated:
 - `normalize-raw` writes `data/outputs/raw-foods.jsonl`
 - `merge-off-branded` writes `data/outputs/branded-foods.jsonl`
 
-`merge-off-branded` output rows contain all `CORE_FOOD_FIELDS` plus one extra field:
+`merge-off-branded` output rows contain all `CORE_FOOD_FIELDS` plus two extra fields:
 
 - `upc`
+- `brand`
 
 ## Data Sources And Local Mapping
 
