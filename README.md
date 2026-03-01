@@ -101,6 +101,39 @@ Raw and branded outputs are intentionally separated:
 - `normalize-raw` writes `data/outputs/raw-foods.jsonl`
 - `merge-off-branded` writes `data/outputs/branded-foods.jsonl`
 
+Nutrient units are defined in `CORE_FIELD_UNITS` in `nutrient_mapping.py`.
+
+If you want a materialized file for downstream DB/schema use, generate it with:
+
+```bash
+uv run python - <<'PY'
+from pathlib import Path
+
+from common.nutrients import write_tracked_nutrient_units
+from nutrient_mapping import CORE_FIELD_UNITS, CORE_FOOD_FIELDS
+
+write_tracked_nutrient_units(
+    Path("data/outputs"),
+    CORE_FOOD_FIELDS,
+    CORE_FIELD_UNITS,
+)
+PY
+```
+
+This writes `data/outputs/nutrient-units.json`.
+
+The file includes only tracked nutrient fields (non-nutrient fields like `source_id`, `source`, `name`, and `portions` are excluded):
+
+```json
+{
+  "nutrients": [
+    {"field": "calories", "unit": "kcal"},
+    {"field": "protein", "unit": "g"},
+    {"field": "selenium", "unit": "mcg"}
+  ]
+}
+```
+
 `merge-off-branded` output rows contain all `CORE_FOOD_FIELDS` plus two extra fields:
 
 - `upc`

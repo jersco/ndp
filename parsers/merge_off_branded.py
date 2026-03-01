@@ -54,7 +54,9 @@ CRITICAL_MACRO_FIELDS = {
 }
 
 PARENTHETICAL_SEGMENT = re.compile(r"\(([^()]*)\)")
-NUMBER_AND_UNIT = re.compile(r"([-+]?\d+(?:[.,]\d+)?(?:/\d+(?:[.,]\d+)?)?)\s*([A-Za-z0-9%/.\u00b5 _-]+)")
+NUMBER_AND_UNIT = re.compile(
+    r"([-+]?\d+(?:[.,]\d+)?(?:/\d+(?:[.,]\d+)?)?)\s*([A-Za-z0-9%/.\u00b5 _-]+)"
+)
 
 OFF_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "calories": ("energy-kcal", "energy", "energy-cal", "energy-kj"),
@@ -331,12 +333,18 @@ def normalize_unit_token(unit: Any) -> str | None:
     if canonical is not None:
         return canonical
 
-    if token in MASS_FACTORS_TO_G or token in VOLUME_FACTORS_TO_ML or token in ENERGY_FACTORS_TO_KJ:
+    if (
+        token in MASS_FACTORS_TO_G
+        or token in VOLUME_FACTORS_TO_ML
+        or token in ENERGY_FACTORS_TO_KJ
+    ):
         return token
     return None
 
 
-def convert_mass_value(value: float, source_unit: str, target_unit: str) -> float | None:
+def convert_mass_value(
+    value: float, source_unit: str, target_unit: str
+) -> float | None:
     source_factor = MASS_FACTORS_TO_G.get(source_unit)
     target_factor = MASS_FACTORS_TO_G.get(target_unit)
     if source_factor is None or target_factor is None:
@@ -345,7 +353,9 @@ def convert_mass_value(value: float, source_unit: str, target_unit: str) -> floa
     return grams / target_factor
 
 
-def convert_energy_value(value: float, source_unit: str, target_unit: str) -> float | None:
+def convert_energy_value(
+    value: float, source_unit: str, target_unit: str
+) -> float | None:
     source_factor = ENERGY_FACTORS_TO_KJ.get(source_unit)
     target_factor = ENERGY_FACTORS_TO_KJ.get(target_unit)
     if source_factor is None or target_factor is None:
@@ -457,7 +467,9 @@ def parse_amount_and_unit_from_text(text: str | None) -> tuple[float, str] | Non
     return None
 
 
-def build_usda_branded_portions(food_row: dict[str, Any]) -> list[dict[str, Any]] | None:
+def build_usda_branded_portions(
+    food_row: dict[str, Any],
+) -> list[dict[str, Any]] | None:
     serving_size = coerce_number(food_row.get("servingSize"))
     serving_unit = normalize_unit_token(food_row.get("servingSizeUnit"))
     portion_name = normalize_text(food_row.get("householdServingFullText")) or "serving"
@@ -465,12 +477,22 @@ def build_usda_branded_portions(food_row: dict[str, Any]) -> list[dict[str, Any]
     if serving_size is not None and serving_size > 0 and serving_unit is not None:
         mass_factor = MASS_FACTORS_TO_G.get(serving_unit)
         if mass_factor is not None:
-            return [{"name": portion_name, "amount": float(serving_size) * mass_factor, "unit": "g"}]
+            return [
+                {
+                    "name": portion_name,
+                    "amount": float(serving_size) * mass_factor,
+                    "unit": "g",
+                }
+            ]
 
         volume_factor = VOLUME_FACTORS_TO_ML.get(serving_unit)
         if volume_factor is not None:
             return [
-                {"name": portion_name, "amount": float(serving_size) * volume_factor, "unit": "ml"}
+                {
+                    "name": portion_name,
+                    "amount": float(serving_size) * volume_factor,
+                    "unit": "ml",
+                }
             ]
 
     household_text = normalize_text(food_row.get("householdServingFullText"))
@@ -531,7 +553,8 @@ def extract_off_brand(food_row: dict[str, Any]) -> str | None:
             for entry in value:
                 if isinstance(entry, dict):
                     brand = first_delimited_text(
-                        normalize_text(entry.get("text")) or normalize_text(entry.get("name"))
+                        normalize_text(entry.get("text"))
+                        or normalize_text(entry.get("name"))
                     )
                 else:
                     brand = first_delimited_text(normalize_text(entry))
@@ -622,7 +645,9 @@ def build_off_nutriments_index(raw_nutriments: Any) -> dict[str, dict[str, Any]]
     return indexed
 
 
-def extract_off_nutriment_value(item: dict[str, Any]) -> tuple[float, str | None] | tuple[None, None]:
+def extract_off_nutriment_value(
+    item: dict[str, Any],
+) -> tuple[float, str | None] | tuple[None, None]:
     for candidate_key in ("100g", "value", "serving"):
         amount = coerce_number(item.get(candidate_key))
         if amount is not None:
@@ -654,10 +679,14 @@ def resolve_off_field_value(
         if salt_item is not None:
             salt_amount, salt_source_unit = extract_off_nutriment_value(salt_item)
             if salt_amount is not None:
-                salt_grams = convert_mass_value(salt_amount, salt_source_unit or "g", "g")
+                salt_grams = convert_mass_value(
+                    salt_amount, salt_source_unit or "g", "g"
+                )
                 if salt_grams is not None:
                     sodium_grams = salt_grams * SODIUM_FROM_SALT_FACTOR
-                    converted = convert_nutrient_value(sodium_grams, "g", target_unit, field)
+                    converted = convert_nutrient_value(
+                        sodium_grams, "g", target_unit, field
+                    )
                     if converted is not None:
                         return converted
     return None
@@ -675,15 +704,25 @@ def map_off_row(
     normalized["source_id"] = source_id
     normalized[EXTRA_FIELD] = normalize_upc(source_id)
     normalized[BRAND_FIELD] = extract_off_brand(food_row)
-    normalized["name"] = extract_product_name(food_row.get("product_name"), food_row.get("lang"))
+    normalized["name"] = extract_product_name(
+        food_row.get("product_name"), food_row.get("lang")
+    )
     normalized["portions"] = build_off_portions(food_row)
 
     nutriments_by_name = build_off_nutriments_index(food_row.get("nutriments"))
 
     for target_field in core_fields:
-        if target_field in {"source_id", "source", "name", "portions", "net_carbohydrates"}:
+        if target_field in {
+            "source_id",
+            "source",
+            "name",
+            "portions",
+            "net_carbohydrates",
+        }:
             continue
-        normalized[target_field] = resolve_off_field_value(target_field, nutriments_by_name, target_units)
+        normalized[target_field] = resolve_off_field_value(
+            target_field, nutriments_by_name, target_units
+        )
 
     normalized["net_carbohydrates"] = compute_net_carbohydrates(
         normalized.get("carbohydrates"), normalized.get("fiber")
@@ -728,18 +767,26 @@ def build_target_units(
         nutrient_row = nutrient_rows_by_id.get(nutrient_id)
         unit_name = nutrient_row.get("unit_name") if nutrient_row is not None else None
         usda_unit = normalize_usda_unit(unit_name)
-        if expected_unit is not None and usda_unit is not None and expected_unit != usda_unit:
+        if (
+            expected_unit is not None
+            and usda_unit is not None
+            and expected_unit != usda_unit
+        ):
             raise RuntimeError(
                 f"Core unit mismatch for {target_field}: expected {expected_unit!r}, "
                 f"USDA derived {usda_unit!r}"
             )
-        target_units[target_field] = expected_unit if expected_unit is not None else usda_unit
+        target_units[target_field] = (
+            expected_unit if expected_unit is not None else usda_unit
+        )
     return target_units
 
 
 def select_json_member(zip_path: Path) -> str:
     with zipfile.ZipFile(zip_path, "r") as archive:
-        json_members = [name for name in archive.namelist() if name.casefold().endswith(".json")]
+        json_members = [
+            name for name in archive.namelist() if name.casefold().endswith(".json")
+        ]
     if not json_members:
         raise RuntimeError(f"No JSON member found in ZIP archive: {zip_path}")
 
@@ -749,7 +796,9 @@ def select_json_member(zip_path: Path) -> str:
     return json_members[0]
 
 
-def iter_root_array_from_text(handle, root_key: str, chunk_size: int = 65536) -> Iterator[dict[str, Any]]:
+def iter_root_array_from_text(
+    handle, root_key: str, chunk_size: int = 65536
+) -> Iterator[dict[str, Any]]:
     decoder = json.JSONDecoder()
     buffer = ""
     token = f'"{root_key}"'
@@ -764,7 +813,9 @@ def iter_root_array_from_text(handle, root_key: str, chunk_size: int = 65536) ->
                 break
         chunk = handle.read(chunk_size)
         if chunk == "":
-            raise RuntimeError(f"JSON stream is missing expected root array: {root_key}")
+            raise RuntimeError(
+                f"JSON stream is missing expected root array: {root_key}"
+            )
         buffer += chunk
         if len(buffer) > search_window and token not in buffer:
             buffer = buffer[-search_window:]
@@ -797,7 +848,9 @@ def iter_usda_source_rows(usda_branded_path: Path) -> Iterator[dict[str, Any]]:
         with zipfile.ZipFile(usda_branded_path, "r") as archive:
             with archive.open(member, "r") as raw_handle:
                 with io.TextIOWrapper(raw_handle, encoding="utf-8") as text_handle:
-                    yield from iter_root_array_from_text(text_handle, ROOT_KEY_BRANDED_FOODS)
+                    yield from iter_root_array_from_text(
+                        text_handle, ROOT_KEY_BRANDED_FOODS
+                    )
         return
 
     with usda_branded_path.open("r", encoding="utf-8") as handle:
@@ -937,8 +990,12 @@ def iter_rows(
 
     target_units = build_target_units(mapping, nutrient_rows_by_id)
 
-    usda_rows = enforce_display_safety(iter_usda_branded_rows(usda_branded_path, mapping, core_fields))
-    off_rows = enforce_display_safety(iter_off_rows(off_parquet_path, target_units, core_fields))
+    usda_rows = enforce_display_safety(
+        iter_usda_branded_rows(usda_branded_path, mapping, core_fields)
+    )
+    off_rows = enforce_display_safety(
+        iter_off_rows(off_parquet_path, target_units, core_fields)
+    )
     merged_rows = merge_rows_with_usda_priority(usda_rows, off_rows)
     yield from enforce_unique_keys(
         merged_rows,
@@ -973,7 +1030,9 @@ def register_subparser(subparsers):
         required=True,
         help="Path to Open Food Facts parquet file",
     )
-    parser.add_argument("--nutrient-csv", required=True, help="Path to USDA nutrient.csv")
+    parser.add_argument(
+        "--nutrient-csv", required=True, help="Path to USDA nutrient.csv"
+    )
     parser.add_argument(
         "--output",
         default=None,
@@ -998,9 +1057,15 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Merge USDA branded + Open Food Facts into one normalized JSONL"
     )
-    parser.add_argument("--usda-branded", required=True, help="Path to USDA branded JSON or ZIP")
-    parser.add_argument("--off-parquet", required=True, help="Path to Open Food Facts parquet")
-    parser.add_argument("--nutrient-csv", required=True, help="Path to USDA nutrient.csv")
+    parser.add_argument(
+        "--usda-branded", required=True, help="Path to USDA branded JSON or ZIP"
+    )
+    parser.add_argument(
+        "--off-parquet", required=True, help="Path to Open Food Facts parquet"
+    )
+    parser.add_argument(
+        "--nutrient-csv", required=True, help="Path to USDA nutrient.csv"
+    )
     parser.add_argument(
         "--output",
         default=None,

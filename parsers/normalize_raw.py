@@ -19,7 +19,9 @@ from . import usda as usda_parser
 SOURCE_NAME = "raw-foods"
 BRANDED_OUTPUT_PREFIX = "branded-foods"
 NON_NUTRIENT_FIELDS = {"source_id", "source", "name", "portions"}
-NUTRIENT_FIELDS = [field for field in CORE_FOOD_FIELDS if field not in NON_NUTRIENT_FIELDS]
+NUTRIENT_FIELDS = [
+    field for field in CORE_FOOD_FIELDS if field not in NON_NUTRIENT_FIELDS
+]
 
 
 def _existing_path(path: Path, label: str) -> Path:
@@ -36,8 +38,10 @@ def build_default_paths(inputs_dir: Path) -> dict[str, Path]:
         "nevo_workbook": inputs_dir / "dutch-nutrient-database" / "NEVO2025_v9.0.xlsx",
         "new_zealand_workbook": inputs_dir / "new-zealand-food-concise.xlsx",
         "survey_json": inputs_dir / "FoodData_Central_survey_food_json.json",
-        "foundation_json": inputs_dir / "FoodData_Central_foundation_food_json_2025-12-18.json",
-        "sr_legacy_json": inputs_dir / "FoodData_Central_sr_legacy_food_json_2018-04.json",
+        "foundation_json": inputs_dir
+        / "FoodData_Central_foundation_food_json_2025-12-18.json",
+        "sr_legacy_json": inputs_dir
+        / "FoodData_Central_sr_legacy_food_json_2018-04.json",
         "nutrient_csv": inputs_dir / "FoodData_Central_csv_2025-04-24" / "nutrient.csv",
     }
 
@@ -53,19 +57,27 @@ def resolve_paths(args: Any) -> dict[str, Path]:
         "canada_directory": Path(args.canada_directory)
         if args.canada_directory
         else defaults["canada_directory"],
-        "cofid_workbook": Path(args.cofid_workbook) if args.cofid_workbook else defaults["cofid_workbook"],
-        "nevo_workbook": Path(args.nevo_workbook) if args.nevo_workbook else defaults["nevo_workbook"],
+        "cofid_workbook": Path(args.cofid_workbook)
+        if args.cofid_workbook
+        else defaults["cofid_workbook"],
+        "nevo_workbook": Path(args.nevo_workbook)
+        if args.nevo_workbook
+        else defaults["nevo_workbook"],
         "new_zealand_workbook": Path(args.new_zealand_workbook)
         if args.new_zealand_workbook
         else defaults["new_zealand_workbook"],
-        "survey_json": Path(args.survey_json) if args.survey_json else defaults["survey_json"],
+        "survey_json": Path(args.survey_json)
+        if args.survey_json
+        else defaults["survey_json"],
         "foundation_json": Path(args.foundation_json)
         if args.foundation_json
         else defaults["foundation_json"],
         "sr_legacy_json": Path(args.sr_legacy_json)
         if args.sr_legacy_json
         else defaults["sr_legacy_json"],
-        "nutrient_csv": Path(args.nutrient_csv) if args.nutrient_csv else defaults["nutrient_csv"],
+        "nutrient_csv": Path(args.nutrient_csv)
+        if args.nutrient_csv
+        else defaults["nutrient_csv"],
     }
 
     return {
@@ -75,15 +87,21 @@ def resolve_paths(args: Any) -> dict[str, Path]:
 
 
 def iter_rows(paths: dict[str, Path]):
-    yield from australia_parser.iter_rows(paths["australia_workbook"])
-    yield from canada_parser.iter_rows(
-        paths["canada_directory"] / "FOOD NAME.csv",
-        paths["canada_directory"] / "NUTRIENT NAME.csv",
-        paths["canada_directory"] / "NUTRIENT AMOUNT.csv",
+    yield from enforce_defined_names(
+        australia_parser.iter_rows(paths["australia_workbook"])
     )
-    yield from cofid_parser.iter_rows(paths["cofid_workbook"])
-    yield from nevo_parser.iter_rows(paths["nevo_workbook"])
-    yield from new_zealand_parser.iter_rows(paths["new_zealand_workbook"])
+    yield from enforce_defined_names(
+        canada_parser.iter_rows(
+            paths["canada_directory"] / "FOOD NAME.csv",
+            paths["canada_directory"] / "NUTRIENT NAME.csv",
+            paths["canada_directory"] / "NUTRIENT AMOUNT.csv",
+        )
+    )
+    yield from enforce_defined_names(cofid_parser.iter_rows(paths["cofid_workbook"]))
+    yield from enforce_defined_names(nevo_parser.iter_rows(paths["nevo_workbook"]))
+    yield from enforce_defined_names(
+        new_zealand_parser.iter_rows(paths["new_zealand_workbook"])
+    )
 
     runtime_map = usda_parser.build_usda_runtime_map(USDA_FIELD_SPECS)
     nutrient_rows = usda_parser.load_nutrient_rows(paths["nutrient_csv"])
@@ -93,12 +111,14 @@ def iter_rows(paths: dict[str, Path]):
         runtime_map, nutrient_rows, CORE_FIELD_UNITS
     )
 
-    yield from usda_parser.iter_all_usda_rows(
-        paths["survey_json"],
-        paths["foundation_json"],
-        paths["sr_legacy_json"],
-        runtime_map,
-        CORE_FOOD_FIELDS,
+    yield from enforce_defined_names(
+        usda_parser.iter_all_usda_rows(
+            paths["survey_json"],
+            paths["foundation_json"],
+            paths["sr_legacy_json"],
+            runtime_map,
+            CORE_FOOD_FIELDS,
+        )
     )
 
 
@@ -107,6 +127,16 @@ def normalize_name_key(value: Any) -> str | None:
         return None
     key = " ".join(value.casefold().split())
     return key or None
+
+
+def has_defined_name(value: Any) -> bool:
+    return normalize_name_key(value) is not None
+
+
+def enforce_defined_names(rows: Iterable[dict[str, Any]]) -> Iterator[dict[str, Any]]:
+    for row in rows:
+        if has_defined_name(row.get("name")):
+            yield row
 
 
 def _is_valid_nutrient_value(value: Any) -> bool:
@@ -120,7 +150,9 @@ def _is_valid_nutrient_value(value: Any) -> bool:
 
 
 def nutrient_completeness_score(row: dict[str, Any]) -> int:
-    return sum(1 for field in NUTRIENT_FIELDS if _is_valid_nutrient_value(row.get(field)))
+    return sum(
+        1 for field in NUTRIENT_FIELDS if _is_valid_nutrient_value(row.get(field))
+    )
 
 
 def source_priority(row: dict[str, Any]) -> int:
@@ -214,7 +246,9 @@ def run_from_args(args) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Normalize non-branded raw sources to one JSONL")
+    parser = argparse.ArgumentParser(
+        description="Normalize non-branded raw sources to one JSONL"
+    )
     parser.add_argument(
         "--inputs-dir",
         default="data/inputs",
