@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from typing import cast
 
 from nutrient_mapping import CORE_FOOD_FIELDS
 from parsers import merge_off_branded
@@ -61,7 +62,8 @@ class MergeOffBrandedTests(unittest.TestCase):
             "mcg",
             "vitamin_d_calciferol",
         )
-        self.assertAlmostEqual(converted, 2.5, places=6)
+        self.assertIsNotNone(converted)
+        self.assertAlmostEqual(cast(float, converted), 2.5, places=6)
 
     def test_extract_usda_brand_prefers_brand_name(self):
         food_row = {
@@ -93,7 +95,7 @@ class MergeOffBrandedTests(unittest.TestCase):
             ],
         }
 
-        target_units = {field: None for field in CORE_FOOD_FIELDS}
+        target_units: dict[str, str | None] = {field: None for field in CORE_FOOD_FIELDS}
         target_units.update(
             {
                 "calories": "kcal",
@@ -115,6 +117,46 @@ class MergeOffBrandedTests(unittest.TestCase):
         self.assertIsInstance(mapped["portions"], list)
         self.assertEqual(mapped["portions"][0]["unit"], "g")
         self.assertAlmostEqual(mapped["portions"][0]["amount"], 30.0, places=5)
+
+    def test_enforce_display_safety_skips_rows_without_names(self):
+        rows = [
+            {"source_id": "1", "name": " ", "calories": 150.0},
+            {"source_id": "2", "name": None, "calories": 200.0},
+            {"source_id": "3", "name": "Valid Name", "calories": 100.0},
+        ]
+
+        filtered = list(merge_off_branded.enforce_display_safety(rows))
+        self.assertEqual(len(filtered), 1)
+        self.assertEqual(filtered[0]["source_id"], "3")
+
+    def test_enforce_display_safety_nulls_outliers(self):
+        rows = [
+            {
+                "source_id": "1",
+                "name": "Valid Name",
+                "calories": 1000.0,
+                "carbohydrates": 20.0,
+                "sodium": float("inf"),
+            }
+        ]
+
+        filtered = list(merge_off_branded.enforce_display_safety(rows))
+        self.assertEqual(len(filtered), 1)
+        self.assertIsNone(filtered[0]["calories"])
+        self.assertIsNone(filtered[0]["sodium"])
+
+    def test_enforce_display_safety_drops_rows_with_two_bad_macros(self):
+        rows = [
+            {
+                "source_id": "1",
+                "name": "Valid Name",
+                "calories": 1200.0,
+                "carbohydrates": 150.0,
+            }
+        ]
+
+        filtered = list(merge_off_branded.enforce_display_safety(rows))
+        self.assertEqual(filtered, [])
 
 
 if __name__ == "__main__":

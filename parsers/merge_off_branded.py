@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import math
 import re
 import zipfile
 from collections.abc import Iterable, Iterator
@@ -35,6 +36,22 @@ RAW_OUTPUT_PREFIX = "raw-foods"
 ROOT_KEY_BRANDED_FOODS = "BrandedFoods"
 
 SODIUM_FROM_SALT_FACTOR = 0.3934
+
+MAX_CALORIES_PER_100G = 900.0
+MAX_GRAMS_PER_100G = 100.0
+MAX_MG_PER_100G = 100000.0
+MAX_MCG_PER_100G = 100000000.0
+
+NON_NUTRIENT_FIELDS = {"source_id", "source", "name", "portions"}
+CRITICAL_MACRO_FIELDS = {
+    "calories",
+    "protein",
+    "dietary_fat",
+    "carbohydrates",
+    "net_carbohydrates",
+    "fiber",
+    "sugars",
+}
 
 PARENTHETICAL_SEGMENT = re.compile(r"\(([^()]*)\)")
 NUMBER_AND_UNIT = re.compile(r"([-+]?\d+(?:[.,]\d+)?(?:/\d+(?:[.,]\d+)?)?)\s*([A-Za-z0-9%/.\u00b5 _-]+)")
@@ -199,6 +216,63 @@ ENERGY_FACTORS_TO_KJ: dict[str, float] = {
     "kj": 1.0,
     "kcal": 4.184,
 }
+
+
+def has_display_name(value: Any) -> bool:
+    return normalize_text(value) is not None
+
+
+def is_invalid_nutrient_value(field: str, value: Any) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+
+    numeric = float(value)
+    if math.isnan(numeric) or math.isinf(numeric):
+        return True
+    if numeric < 0:
+        return True
+
+    if field == "calories":
+        return numeric > MAX_CALORIES_PER_100G
+
+    unit = CORE_FIELD_UNITS.get(field)
+    if unit == "g":
+        return numeric > MAX_GRAMS_PER_100G
+    if unit == "mg":
+        return numeric > MAX_MG_PER_100G
+    if unit == "mcg":
+        return numeric > MAX_MCG_PER_100G
+
+    return False
+
+
+def sanitize_row_for_display(row: dict[str, Any]) -> int:
+    invalid_macro_count = 0
+    for field in CORE_FOOD_FIELDS:
+        if field in NON_NUTRIENT_FIELDS:
+            continue
+
+        value = row.get(field)
+        if not is_invalid_nutrient_value(field, value):
+            continue
+
+        row[field] = None
+        if field in CRITICAL_MACRO_FIELDS:
+            invalid_macro_count += 1
+
+    return invalid_macro_count
+
+
+def enforce_display_safety(rows: Iterable[dict[str, Any]]) -> Iterator[dict[str, Any]]:
+    for row in rows:
+        if not has_display_name(row.get("name")):
+            continue
+
+        invalid_macro_count = sanitize_row_for_display(row)
+        if invalid_macro_count >= 2:
+            continue
+
+        yield row
 
 
 def normalize_text(value: Any) -> str | None:
@@ -754,7 +828,7 @@ def iter_usda_branded_rows(
 ) -> Iterator[dict[str, Any]]:
     for food_row in iter_usda_source_rows(usda_branded_path):
         mapped_row = map_usda_branded_row(food_row, mapping, core_fields)
-        if mapped_row.get("source_id") is None and mapped_row.get("name") is None:
+        if not has_display_name(mapped_row.get("name")):
             continue
         yield mapped_row
 
@@ -803,7 +877,7 @@ def iter_off_rows(
     for batch in parquet.iter_batches(batch_size=batch_size, columns=columns):
         for food_row in batch.to_pylist():
             mapped_row = map_off_row(food_row, target_units, core_fields)
-            if mapped_row.get("source_id") is None and mapped_row.get("name") is None:
+            if not has_display_name(mapped_row.get("name")):
                 continue
             yield mapped_row
 
@@ -863,8 +937,8 @@ def iter_rows(
 
     target_units = build_target_units(mapping, nutrient_rows_by_id)
 
-    usda_rows = iter_usda_branded_rows(usda_branded_path, mapping, core_fields)
-    off_rows = iter_off_rows(off_parquet_path, target_units, core_fields)
+    usda_rows = enforce_display_safety(iter_usda_branded_rows(usda_branded_path, mapping, core_fields))
+    off_rows = enforce_display_safety(iter_off_rows(off_parquet_path, target_units, core_fields))
     merged_rows = merge_rows_with_usda_priority(usda_rows, off_rows)
     yield from enforce_unique_keys(
         merged_rows,
